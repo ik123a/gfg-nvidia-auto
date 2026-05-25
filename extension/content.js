@@ -147,10 +147,31 @@ function detectResultState() {
   // Check for compile success (tests passed, ready to submit)
   if (text.includes('Compilation Completed') || text.includes('All Test Cases Passed')) return "compile_success";
   
-  // Check sidebar for "Solved" status (Green checkmark next to active item)
+  // 1. Check sidebar for "Solved" status (Green checkmark next to active item)
   const activeSidebarItem = document.querySelector('.sidebar_item__khyNp.active, [class*="sidebar_item"].active, a.active[href*="/problem/"]');
-  if (activeSidebarItem && (activeSidebarItem.querySelector('i.green.check, .green.tick, [class*="success"]') || activeSidebarItem.innerText.includes('✅'))) {
+  if (activeSidebarItem && (activeSidebarItem.querySelector('i.green.check, .green.tick, [class*="success"], svg, img') || activeSidebarItem.innerText.includes('✅') || activeSidebarItem.innerText.includes('✓'))) {
       return "accepted";
+  }
+
+  // 2. Robust URL-based active sidebar solver check (perfect for Batch track items)
+  const currentPath = window.location.pathname;
+  const slugMatch = currentPath.match(/\/problems\/([^/]+)/);
+  if (slugMatch && slugMatch[1]) {
+    const slug = slugMatch[1];
+    const activeLink = Array.from(document.querySelectorAll('a')).find(a => {
+      const href = a.getAttribute('href') || "";
+      return href.includes(slug);
+    });
+    if (activeLink) {
+      const container = activeLink.closest('[class*="problems_solve_next_item"], [class*="sidebar_item"], li, [class*="ProblemsList"]') || activeLink;
+      const hasGreenTick = container.querySelector('svg, img[src*="check"], img[src*="tick"], [class*="green"], [class*="success"], [class*="tick"], [class*="check"]') || 
+                           container.innerText.includes('✅') || 
+                           container.innerText.includes('✓');
+      if (hasGreenTick) {
+         console.log("GFG-AUTO: Current problem is verified as SOLVED in the sidebar tracklist!");
+         return "accepted";
+      }
+    }
   }
   
   return null;
@@ -268,16 +289,15 @@ function navigateToNext() {
     isTesting = false; isSubmitting = false; isHandlingError = false; fixAttempts = 0;
     const currentPath = window.location.pathname;
     
-    // Strategy 1: Click the "Next >>" link in the problem header
-    const allAnchors = Array.from(document.querySelectorAll('a'));
-    const headerNext = allAnchors.find(el => {
+    // Strategy 1: Click the "Next »" or "Next >>" button/link on the page (Universal tag search)
+    const nextEls = Array.from(document.querySelectorAll('a, button, div, span, p')).filter(el => {
+      if (el.offsetParent === null) return false;
       const txt = (el.innerText || '').trim();
-      return (txt === 'Next >>' || txt === 'Next »' || txt === 'Next>>' || txt === 'Next >>') 
-             && el.offsetParent !== null;
+      return txt === 'Next >>' || txt === 'Next »' || txt === 'Next>>' || txt === 'Next»' || txt === 'Next';
     });
-    if (headerNext) {
-      console.log("GFG-AUTO: Clicking 'Next >>' header link:", headerNext.href);
-      headerNext.click();
+    if (nextEls.length > 0) {
+      console.log("GFG-AUTO: Navigating via Next button click:", nextEls[0]);
+      nextEls[0].click();
       return true;
     }
 
@@ -449,77 +469,95 @@ async function triggerSolve(extraParams = {}) {
   btn.disabled = true;
   updateHUD(isFix ? `🔧 Fixing (${modelName})...` : `🧠 Thinking (${modelName})...`, "#6c5ce7", 40); 
   startTimer(120); 
-  window.postMessage({ type: "GET_EDITOR_VALUE" }, "*");
+  
+  let editorReturned = false;
+
+  // Timeout fallback in case injected Monaco/Ace unbinds during SPA page transition
+  const editorTimeout = setTimeout(() => {
+    if (!editorReturned) {
+      console.warn("GFG-AUTO: postMessage editor response timed out. Recovering with fallback blank boilerplate.");
+      window.removeEventListener("message", onMessage);
+      proceedWithSolve("");
+    }
+  }, 3500);
+
   const onMessage = async (event) => {
     if (event.data.type === "EDITOR_VALUE_RETURN") {
+      editorReturned = true;
+      clearTimeout(editorTimeout);
       window.removeEventListener("message", onMessage);
-      try {
-        const controller = new AbortController();
-        window._gfg_controller = controller; // Store globally for watchdog
-        const timeoutId = setTimeout(() => controller.abort(), 125000); // 125s fetch timeout
-        
-        const response = await fetch(`${BACKEND_URL}/solve`, { 
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json' }, 
-            signal: controller.signal,
-            body: JSON.stringify({ 
-              title: getProblemTitle(), 
-              description: getProblemDescription(), 
-              boilerplate: event.data.value, 
-              ...extraParams 
-            }) 
-        });
-        clearTimeout(timeoutId);
-        
-        const data = await response.json();
-        if (data.success) {
-          window.postMessage({ type: "SET_EDITOR_VALUE", value: data.code }, "*");
-          btn.innerText = '✅ Code Ready'; isHandlingError = false;
-          if (autoMode) { 
-            updateHUD("📝 Injecting...", "#6c5ce7", 70); 
-            isTesting = true; 
-            setTimeout(clickCompileButton, 1500); 
-          }
-          else { stopTimer(); updateHUD("✅ Done!", "#4cd137", 100); hideHUDIn(3000); }
-        } else { 
-          stopTimer(); 
-          const errorMsg = data.error || "AI Failed";
-          const isTimeout = errorMsg.toLowerCase().includes("timeout");
-          
-          if (isTimeout && autoMode) {
-              updateHUD("⏳ Timeout (Rotating...)", "#fbc531", 100);
-              fixAttempts++; // Force rotation
-              isHandlingError = false;
-              setTimeout(() => triggerSolve(extraParams), 1000); // RESTART on timeout
-              return;
-          }
-
-          if (data.is_rate_limit) {
-            updateHUD("⏳ Rate Limited (Wait 5s)", "#fbc531", 100);
-            fixAttempts++; // Force rotation on rate limit
-            if (autoMode) { setTimeout(() => triggerSolve(extraParams), 5000); return; } 
-          } else {
-            updateHUD(`❌ ${errorMsg}`, "#e84118", 100); 
-          }
-          isHandlingError = false; 
-        }
-      } catch (err) { 
-        stopTimer(); 
-        const isTimeout = err.name === 'AbortError';
-        updateHUD(isTimeout ? "⏳ Timeout (Switching...)" : "❌ Error (Retrying...)", "#fbc531", 100); 
-        fixAttempts++; // Move to next model
-        isHandlingError = false; 
-        
-        // AUTO-RETRY: If in auto-mode, immediately trigger the NEXT model in the list
-        if (autoMode) {
-            console.log(`GFG-AUTO Failover: ${isTimeout ? 'Timeout' : 'Error'} occurred. Moving to next model...`);
-            setTimeout(() => triggerSolve(extraParams), 1000); 
-        }
-      }
-      btn.disabled = false;
+      proceedWithSolve(event.data.value);
     }
   };
   window.addEventListener("message", onMessage);
+  window.postMessage({ type: "GET_EDITOR_VALUE" }, "*");
+
+  async function proceedWithSolve(boilerplateCode) {
+    try {
+      const controller = new AbortController();
+      window._gfg_controller = controller; // Store globally for watchdog
+      const timeoutId = setTimeout(() => controller.abort(), 125000); // 125s fetch timeout
+      
+      const response = await fetch(`${BACKEND_URL}/solve`, { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' }, 
+          signal: controller.signal,
+          body: JSON.stringify({ 
+            title: getProblemTitle(), 
+            description: getProblemDescription(), 
+            boilerplate: boilerplateCode, 
+            ...extraParams 
+          }) 
+      });
+      clearTimeout(timeoutId);
+      
+      const data = await response.json();
+      if (data.success) {
+        window.postMessage({ type: "SET_EDITOR_VALUE", value: data.code }, "*");
+        btn.innerText = '✅ Code Ready'; isHandlingError = false;
+        if (autoMode) { 
+          updateHUD("📝 Injecting...", "#6c5ce7", 70); 
+          isTesting = true; 
+          setTimeout(clickCompileButton, 1500); 
+        }
+        else { stopTimer(); updateHUD("✅ Done!", "#4cd137", 100); hideHUDIn(3000); }
+      } else { 
+        stopTimer(); 
+        const errorMsg = data.error || "AI Failed";
+        const isTimeout = errorMsg.toLowerCase().includes("timeout");
+        
+        if (isTimeout && autoMode) {
+            updateHUD("⏳ Timeout (Rotating...)", "#fbc531", 100);
+            fixAttempts++; // Force rotation
+            isHandlingError = false;
+            setTimeout(() => triggerSolve(extraParams), 1000); // RESTART on timeout
+            return;
+        }
+
+        if (data.is_rate_limit) {
+          updateHUD("⏳ Rate Limited (Wait 5s)", "#fbc531", 100);
+          fixAttempts++; // Force rotation on rate limit
+          if (autoMode) { setTimeout(() => triggerSolve(extraParams), 5000); return; } 
+        } else {
+          updateHUD(`❌ ${errorMsg}`, "#e84118", 100); 
+        }
+        isHandlingError = false; 
+      }
+    } catch (err) { 
+      stopTimer(); 
+      const isTimeout = err.name === 'AbortError';
+      updateHUD(isTimeout ? "⏳ Timeout (Switching...)" : "❌ Error (Retrying...)", "#fbc531", 100); 
+      fixAttempts++; // Move to next model
+      isHandlingError = false; 
+      
+      // AUTO-RETRY: If in auto-mode, immediately trigger the NEXT model in the list
+      if (autoMode) {
+          console.log(`GFG-AUTO Failover: ${isTimeout ? 'Timeout' : 'Error'} occurred. Moving to next model...`);
+          setTimeout(() => triggerSolve(extraParams), 1000); 
+      }
+    }
+    btn.disabled = false;
+  }
 }
 
 function clickCompileButton() {
