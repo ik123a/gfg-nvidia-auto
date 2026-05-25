@@ -1,0 +1,6 @@
+flask[async]
+flask-cors
+openai
+python-dotenv
+requests
+aiohttp

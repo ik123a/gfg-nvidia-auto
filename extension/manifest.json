@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "GFG-NVIDIA-AUTO",
+  "version": "1.0",
+  "description": "Automatically solve GeeksforGeeks problems using NVIDIA's multi-model AI.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.geeksforgeeks.org/*",
+    "http://127.0.0.1:5000/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.geeksforgeeks.org/problems/*",
+        "https://www.geeksforgeeks.org/batch/*",
+        "https://practice.geeksforgeeks.org/problems/*"
+      ],
+      "js": ["content.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["injected.js"],
+      "matches": ["https://www.geeksforgeeks.org/*", "https://practice.geeksforgeeks.org/*"]
+    }
+  ]
+}
