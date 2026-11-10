@@ -1,5 +1,51 @@
 # ⚡ GFG-NVIDIA-AUTO
 
+## Verified scope — 10 November 2026
+
+This repository contains a Manifest V3 GeeksforGeeks extension and a Flask
+backend on port 5000. The extension scrapes problem text, requests code, injects
+it into the page editor and can click Compile/Submit in auto mode. The backend
+can query multiple NVIDIA models and use a model judge; model names and provider
+availability were not checked with live calls.
+
+`/solve` and `/solve_evolve` now reject malformed or non-object JSON with HTTP
+400 and `{"success": false, ...}` before solver dispatch. Previously null,
+arrays and JSON scalars raised `AttributeError` and returned HTTP 500.
+
+```sh
+python -m unittest discover -s backend -p test_requests.py -v
+node --check extension/content.js
+node --check extension/injected.js
+node --check extension/popup.js
+```
+
+Both offline Flask tests pass, covering invalid input and a synthetic successful
+response. Providers and dotenv loading are replaced before import; the test does
+not send inference requests, read API keys or interact with GFG accounts. Syntax
+checks do not validate current site selectors or automatic submissions.
+The code still removes C++ comments using regexes that can truncate `//` inside
+string literals. Structured field validation and localhost authentication/CORS
+restrictions also remain follow-up work. Browser local storage is not encrypted
+secret storage; the existing ignore rules do not prove past commits contain no keys.
+
+### Local popup check
+
+![Backend offline popup layout](docs/ui-offline.png)
+
+This is the actual local popup HTML rendered in an isolated Edge page at its
+natural 320px width. Chrome storage/tab APIs and network requests were stubbed.
+It is a layout check, not an installed-extension or live-service capture.
+Named 44px toggle targets, visible keyboard focus and Space-key toggling passed;
+no page error or horizontal overflow was observed. Helper text and offline status contrast were improved.
+
+![Source review flow diagram, not a runtime screenshot](docs/review-flow.svg)
+
+The diagram describes the implementation. No live GFG submissions, account
+sessions, model calls or success-rate benchmarks were run. A real execution
+capture requires an explicitly owned fixture/authorized session and provider
+configuration; no screenshot is presented as evidence for those boundaries.
+
+
 An automated, highly-optimized multi-model AI coding solver browser extension for **GeeksforGeeks (GFG)**. Powered by NVIDIA's high-speed inference microservices (NIM), this extension automatically solves coding problems, compiles, handles test cases, learns from failed attempts, and evolves solutions to complete tracks effortlessly.
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-blue.svg?logo=google-chrome&logoColor=white)](#)
