@@ -28,6 +28,16 @@ string literals. Structured field validation and localhost authentication/CORS
 restrictions also remain follow-up work. Browser local storage is not encrypted
 secret storage; the existing ignore rules do not prove past commits contain no keys.
 
+### Local popup check
+
+![Backend offline popup layout](docs/ui-offline.png)
+
+This is the actual local popup HTML rendered in an isolated Edge page at its
+natural 320px width. Chrome storage/tab APIs and network requests were stubbed.
+It is a layout check, not an installed-extension or live-service capture.
+Named 44px toggle targets, visible keyboard focus and Space-key toggling passed;
+no page error or horizontal overflow was observed. Helper text and offline status contrast were improved.
+
 ![Source review flow diagram, not a runtime screenshot](docs/review-flow.svg)
 
 The diagram describes the implementation. No live GFG submissions, account
